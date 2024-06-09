@@ -2,10 +2,12 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
+// import 'package:opencv/opencv.dart';
+// import 'package:opencv/core/core.dart';
+import 'package:image/image.dart' as img;
 
 void main() => runApp(MyApp());
 
@@ -85,23 +87,11 @@ class ImagePickerDemo extends StatefulWidget {
 }
 
 class _ImagePickerDemoState extends State<ImagePickerDemo> {
-  TextEditingController _urlController = TextEditingController();
   File? _image;
-  img.Image? _blendedImage;
+  Uint8List? _blendedImage;
   final picker = ImagePicker();
   double _sliderValue = 0.5;
-
-  @override
-  void initState() {
-    super.initState();
-    _urlController.text = 'http://8.138.119.19:8000/upload/';
-  }
-
-  @override
-  void dispose() {
-    _urlController.dispose();
-    super.dispose();
-  }
+  final String defaultUrl = 'http://8.138.119.19:8000/upload/';
 
   Future<void> _pickImage() async {
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
@@ -114,12 +104,12 @@ class _ImagePickerDemoState extends State<ImagePickerDemo> {
   }
 
   Future<void> _uploadImage() async {
-    if (_image == null || _urlController.text.isEmpty) {
-      _showSnackBar('请先选择图片并输入有效的URL');
+    if (_image == null) {
+      _showSnackBar('请先选择图片');
       return;
     }
 
-    var url = Uri.parse(_urlController.text);
+    var url = Uri.parse(defaultUrl);
     var request = http.MultipartRequest('POST', url);
     request.headers['accept'] = 'application/json';
     request.headers['Content-Type'] = 'multipart/form-data';
@@ -153,44 +143,37 @@ class _ImagePickerDemoState extends State<ImagePickerDemo> {
     }
   }
 
-  void _blendImages(Uint8List responseData) {
+  Future<void> _blendImages(Uint8List responseData) async {
     if (_image == null) {
       return;
     }
 
-    img.Image image1 = img.decodeImage(_image!.readAsBytesSync())!;
-    img.Image image2 = img.decodeImage(responseData)!;
+    try {
+      final image1 = img.decodeImage(_image!.readAsBytesSync())!;
+      final image2 = img.decodeImage(responseData)!;
 
-    img.Image resizedImage2 = img.copyResize(image2, width: image1.width, height: image1.height);
-    img.Image blendedImage = img.Image(image1.width, image1.height);
+      final resizedImage2 = img.copyResize(image2, width: image1.width, height: image1.height);
+      final blendedImage = img.Image(image1.width, image1.height);
 
-    for (int y = 0; y < image1.height; y++) {
-      for (int x = 0; x < image1.width; x++) {
-        int pixel1 = image1.getPixel(x, y);
-        int pixel2 = resizedImage2.getPixel(x, y);
-
-        int r1 = img.getRed(pixel1);
-        int g1 = img.getGreen(pixel1);
-        int b1 = img.getBlue(pixel1);
-        int a1 = img.getAlpha(pixel1);
-
-        int r2 = img.getRed(pixel2);
-        int g2 = img.getGreen(pixel2);
-        int b2 = img.getBlue(pixel2);
-        int a2 = img.getAlpha(pixel2);
-
-        int r = (r1 * _sliderValue + r2 * (1 - _sliderValue)).toInt();
-        int g = (g1 * _sliderValue + g2 * (1 - _sliderValue)).toInt();
-        int b = (b1 * _sliderValue + b2 * (1 - _sliderValue)).toInt();
-        int a = (a1 * _sliderValue + a2 * (1 - _sliderValue)).toInt();
-
-        blendedImage.setPixel(x, y, img.getColor(r, g, b, a));
+      for (int y = 0; y < image1.height; y++) {
+        for (int x = 0; x < image1.width; x++) {
+          final pixel1 = image1.getPixel(x, y);
+          final pixel2 = resizedImage2.getPixel(x, y);
+          final r = (img.getRed(pixel1) * _sliderValue + img.getRed(pixel2) * (1 - _sliderValue)).toInt();
+          final g = (img.getGreen(pixel1) * _sliderValue + img.getGreen(pixel2) * (1 - _sliderValue)).toInt();
+          final b = (img.getBlue(pixel1) * _sliderValue + img.getBlue(pixel2) * (1 - _sliderValue)).toInt();
+          final a = (img.getAlpha(pixel1) * _sliderValue + img.getAlpha(pixel2) * (1 - _sliderValue)).toInt();
+          blendedImage.setPixel(x, y, img.getColor(r, g, b, a));
+        }
       }
-    }
 
-    setState(() {
-      _blendedImage = blendedImage;
-    });
+      final blendedImageBytes = Uint8List.fromList(img.encodePng(blendedImage));
+      setState(() {
+        _blendedImage = blendedImageBytes;
+      });
+    } catch (e) {
+      _showSnackBar('图像处理过程中发生错误: $e');
+    }
   }
 
   Future<void> _saveToHistory(Uint8List responseData) async {
@@ -242,14 +225,6 @@ class _ImagePickerDemoState extends State<ImagePickerDemo> {
             children: <Widget>[
               _image == null ? Text('No image selected.') : Image.file(_image!),
               SizedBox(height: 20),
-              TextField(
-                controller: _urlController,
-                decoration: InputDecoration(
-                  labelText: 'Backend URL',
-                  hintText: 'Enter backend URL',
-                ),
-              ),
-              SizedBox(height: 20),
               Slider(
                 value: _sliderValue,
                 min: 0,
@@ -260,7 +235,7 @@ class _ImagePickerDemoState extends State<ImagePickerDemo> {
                   setState(() {
                     _sliderValue = value;
                     if (_blendedImage != null) {
-                      _blendImages(Uint8List.fromList(img.encodePng(_blendedImage!)));
+                      _blendImages(Uint8List.fromList(_blendedImage!));
                     }
                   });
                 },
@@ -278,7 +253,7 @@ class _ImagePickerDemoState extends State<ImagePickerDemo> {
               SizedBox(height: 20),
               _blendedImage == null
                   ? Text('No blended image.')
-                  : Image.memory(Uint8List.fromList(img.encodePng(_blendedImage!))),
+                  : Image.memory(_blendedImage!),
             ],
           ),
         ),
