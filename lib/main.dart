@@ -5,8 +5,6 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
-// import 'package:opencv/opencv.dart';
-// import 'package:opencv/core/core.dart';
 import 'package:image/image.dart' as img;
 
 void main() => runApp(MyApp());
@@ -33,9 +31,8 @@ class SplashScreen extends StatelessWidget {
 
     return Scaffold(
       body: Center(
-        child: Text(
-          'ClearShot',
-          style: TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+        child: Image(
+          image: AssetImage('images/logo1.png'), // Corrected the path here
         ),
       ),
     );
@@ -52,6 +49,7 @@ class _MainScreenState extends State<MainScreen> {
 
   final List<Widget> _children = [
     ImagePickerDemo(),
+    BatchProcessingScreen(),
     HistoryScreen(),
   ];
 
@@ -70,6 +68,10 @@ class _MainScreenState extends State<MainScreen> {
           BottomNavigationBarItem(
             icon: Icon(Icons.home),
             label: 'Main',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.batch_prediction),
+            label: 'Batch Processing',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.history),
@@ -262,6 +264,127 @@ class _ImagePickerDemoState extends State<ImagePickerDemo> {
   }
 }
 
+class BatchProcessingScreen extends StatefulWidget {
+  @override
+  _BatchProcessingScreenState createState() => _BatchProcessingScreenState();
+}
+
+class _BatchProcessingScreenState extends State<BatchProcessingScreen> {
+  List<XFile>? _imageFiles;
+  final picker = ImagePicker();
+  double _sliderValue = 0.5;  // Ensure you have the slider value here if needed
+
+  // 批量选择图片
+  Future<void> _pickMultipleImages() async {
+    final pickedFiles = await picker.pickMultiImage();
+    setState(() {
+      if (pickedFiles != null && pickedFiles.length <= 9) {
+        _imageFiles = pickedFiles;
+      } else if (pickedFiles != null && pickedFiles.length > 9) {
+        _imageFiles = pickedFiles.sublist(0, 9); // 只选择前九张图片
+      } else {
+        _imageFiles = null;
+      }
+    });
+  }
+
+  Future<void> _uploadImages() async {
+    if (_imageFiles == null || _imageFiles!.isEmpty) {
+      _showSnackBar('请先选择图片');
+      return;
+    }
+
+    for (var image in _imageFiles!) {
+      await _uploadImage(File(image.path));
+    }
+    _showSnackBar('所有图片上传成功');
+  }
+
+  Future<void> _uploadImage(File image) async {
+    final String defaultUrl = 'http://8.138.119.19:8000/upload/';
+    var url = Uri.parse(defaultUrl);
+    var request = http.MultipartRequest('POST', url);
+    request.headers['accept'] = 'application/json';
+    request.headers['Content-Type'] = 'multipart/form-data';
+
+    request.files.add(await http.MultipartFile.fromPath(
+      'file',
+      image.path,
+    ));
+
+    request.fields['sliderValue'] = _sliderValue.toString();
+
+    try {
+      var response = await request.send();
+      if (response.statusCode == 200) {
+        http.Response res = await http.Response.fromStream(response);
+        Uint8List responseData = res.bodyBytes;
+        // Handle the response as needed, such as blending or saving
+      } else {
+        _showSnackBar('图片上传失败. 错误代码: ${response.statusCode}');
+      }
+    } catch (e) {
+      _showSnackBar('图片上传过程中发生错误: $e');
+    }
+  }
+
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: Duration(seconds: 3),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Batch Processing'),
+        // backgroundColor: Colors.blueGrey[900],
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            ElevatedButton(
+              onPressed: _pickMultipleImages,
+              child: Text('Pick Up Images'),
+            ),
+            SizedBox(height: 20),
+            _imageFiles == null
+                ? Text('No images selected.')
+                : Container(
+              padding: EdgeInsets.all(8),
+              child: GridView.builder(
+                shrinkWrap: true,
+                itemCount: _imageFiles!.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 4,
+                  mainAxisSpacing: 4,
+                ),
+                itemBuilder: (context, index) {
+                  return Image.file(
+                    File(_imageFiles![index].path),
+                    fit: BoxFit.cover,
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _uploadImages,
+              child: Text('Upload Images'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class HistoryScreen extends StatefulWidget {
   @override
   _HistoryScreenState createState() => _HistoryScreenState();
@@ -326,28 +449,61 @@ class _HistoryScreenState extends State<HistoryScreen> {
               if (snapshot.connectionState == ConnectionState.done) {
                 if (snapshot.hasData) {
                   return Container(
-                    height: 150, // Increased height for each item
+                    margin: EdgeInsets.symmetric(vertical: 4), // Reduced margin
+                    height: 120, // Adjusted height for each item
                     child: ListTile(
-                      leading: Image.memory(snapshot.data!, width: 100, height: 100, fit: BoxFit.cover),
-                      title: Text(directory.path.split('/').last),
+                      contentPadding: EdgeInsets.all(8), // Adjust padding
+                      leading: Container(
+                        width: 120,
+                        height: 120, // Set height equal to width to make it square
+                        child: Image.memory(
+                          snapshot.data!,
+                          gaplessPlayback: true,
+                          // width: 120,
+                          // height: 120,
+                          // fit: BoxFit.cover, // Use BoxFit.cover to fill the square
+                        ),
+                      ),
+                      title: Text(
+                        directory.path.split('/').last,
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold), // Larger font size
+                      ),
                       onTap: () => _openDetailScreen(directory),
                     ),
                   );
                 } else {
                   return Container(
-                    height: 150, // Increased height for each item
+                    margin: EdgeInsets.symmetric(vertical: 4), // Reduced margin
+                    height: 150, // Adjusted height for each item
                     child: ListTile(
-                      leading: Icon(Icons.broken_image),
-                      title: Text('Failed to load image'),
+                      contentPadding: EdgeInsets.all(8), // Adjust padding
+                      leading: Container(
+                        width: 100,
+                        height: 100, // Set height equal to width to make it square
+                        child: Icon(Icons.broken_image, size: 50),
+                      ),
+                      title: Text(
+                        'Failed to load image',
+                        style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold), // Larger font size
+                      ),
                     ),
                   );
                 }
               } else {
                 return Container(
-                  height: 150, // Increased height for each item
+                  margin: EdgeInsets.symmetric(vertical: 4), // Reduced margin
+                  height: 150, // Adjusted height for each item
                   child: ListTile(
-                    leading: CircularProgressIndicator(),
-                    title: Text('Loading...'),
+                    contentPadding: EdgeInsets.all(8), // Adjust padding
+                    leading: Container(
+                      width: 100,
+                      height: 100, // Set height equal to width to make it square
+                      child: CircularProgressIndicator(),
+                    ),
+                    title: Text(
+                      'Loading...',
+                      style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold), // Larger font size
+                    ),
                   ),
                 );
               }
@@ -369,7 +525,7 @@ class DetailScreen extends StatefulWidget {
 }
 
 class _DetailScreenState extends State<DetailScreen> {
-  bool _isImageMaximized = false;
+  int? _maximizedImageIndex;
 
   @override
   Widget build(BuildContext context) {
@@ -390,25 +546,45 @@ class _DetailScreenState extends State<DetailScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: <Widget>[
-            FutureBuilder<Uint8List>(
-              future: originalImageFile.readAsBytes(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.done) {
-                  if (snapshot.hasData) {
-                    return Image.memory(snapshot.data!, width: 200, height: 200, fit: BoxFit.cover);
-                  } else {
-                    return Icon(Icons.broken_image, size: 100);
-                  }
-                } else {
-                  return CircularProgressIndicator();
-                }
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _maximizedImageIndex = _maximizedImageIndex == 0 ? null : 0;
+                });
               },
+              child: FutureBuilder<Uint8List>(
+                future: originalImageFile.readAsBytes(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.done) {
+                    if (snapshot.hasData) {
+                      return _maximizedImageIndex == 0
+                          ? Expanded(
+                        child: InteractiveViewer(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _maximizedImageIndex = null;
+                              });
+                            },
+                            child: Image.memory(snapshot.data!),
+                          ),
+                        ),
+                      )
+                          : Image.memory(snapshot.data!, width: 200, height: 200, fit: BoxFit.cover);
+                    } else {
+                      return Icon(Icons.broken_image, size: 100);
+                    }
+                  } else {
+                    return CircularProgressIndicator();
+                  }
+                },
+              ),
             ),
             SizedBox(height: 20),
             GestureDetector(
               onTap: () {
                 setState(() {
-                  _isImageMaximized = !_isImageMaximized;
+                  _maximizedImageIndex = _maximizedImageIndex == 1 ? null : 1;
                 });
               },
               child: FutureBuilder<Uint8List>(
@@ -416,8 +592,19 @@ class _DetailScreenState extends State<DetailScreen> {
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.done) {
                     if (snapshot.hasData) {
-                      return _isImageMaximized
-                          ? Expanded(child: Image.memory(snapshot.data!))
+                      return _maximizedImageIndex == 1
+                          ? Expanded(
+                        child: InteractiveViewer(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _maximizedImageIndex = null;
+                              });
+                            },
+                            child: Image.memory(snapshot.data!),
+                          ),
+                        ),
+                      )
                           : Image.memory(snapshot.data!, width: 200, height: 200, fit: BoxFit.cover);
                     } else {
                       return Icon(Icons.broken_image, size: 100);
@@ -434,3 +621,5 @@ class _DetailScreenState extends State<DetailScreen> {
     );
   }
 }
+
+
