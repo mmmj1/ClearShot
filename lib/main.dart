@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:intl/intl.dart';
 import 'package:image/image.dart' as img;
+import 'full_screen_image_page.dart';
 
 void main() => runApp(MyApp());
 
@@ -272,35 +273,37 @@ class BatchProcessingScreen extends StatefulWidget {
 class _BatchProcessingScreenState extends State<BatchProcessingScreen> {
   List<XFile>? _imageFiles;
   final picker = ImagePicker();
-  double _sliderValue = 0.5;  // Ensure you have the slider value here if needed
+  double _sliderValue = 0.5;
 
-  // 批量选择图片
+  // 选择多张图片
   Future<void> _pickMultipleImages() async {
     final pickedFiles = await picker.pickMultiImage();
     setState(() {
       if (pickedFiles != null && pickedFiles.length <= 9) {
         _imageFiles = pickedFiles;
       } else if (pickedFiles != null && pickedFiles.length > 9) {
-        _imageFiles = pickedFiles.sublist(0, 9); // 只选择前九张图片
+        _imageFiles = pickedFiles.sublist(0, 9); // 只选择前9张图片
       } else {
         _imageFiles = null;
       }
     });
   }
 
+  // 上传图片
   Future<void> _uploadImages() async {
     if (_imageFiles == null || _imageFiles!.isEmpty) {
       _showSnackBar('请先选择图片');
       return;
     }
 
-    for (var image in _imageFiles!) {
-      await _uploadImage(File(image.path));
+    for (int i = 0; i < _imageFiles!.length; i++) {
+      await _uploadImage(File(_imageFiles![i].path), i);
     }
     _showSnackBar('所有图片上传成功');
   }
 
-  Future<void> _uploadImage(File image) async {
+  // 上传单张图片
+  Future<void> _uploadImage(File image, int index) async {
     final String defaultUrl = 'http://8.138.119.19:8000/upload/';
     var url = Uri.parse(defaultUrl);
     var request = http.MultipartRequest('POST', url);
@@ -309,7 +312,7 @@ class _BatchProcessingScreenState extends State<BatchProcessingScreen> {
 
     request.files.add(await http.MultipartFile.fromPath(
       'file',
-      image.path,
+      image.path
     ));
 
     request.fields['sliderValue'] = _sliderValue.toString();
@@ -319,13 +322,24 @@ class _BatchProcessingScreenState extends State<BatchProcessingScreen> {
       if (response.statusCode == 200) {
         http.Response res = await http.Response.fromStream(response);
         Uint8List responseData = res.bodyBytes;
-        // Handle the response as needed, such as blending or saving
+        String tempPath = await _writeToTempFile(responseData);
+        setState(() {
+          _imageFiles![index] = XFile(tempPath);
+        });
       } else {
         _showSnackBar('图片上传失败. 错误代码: ${response.statusCode}');
       }
     } catch (e) {
       _showSnackBar('图片上传过程中发生错误: $e');
     }
+  }
+
+  // 将数据写入临时文件
+  Future<String> _writeToTempFile(Uint8List data) async {
+    final directory = await getTemporaryDirectory();
+    final tempFile = File('${directory.path}/${DateTime.now().millisecondsSinceEpoch}.png');
+    await tempFile.writeAsBytes(data);
+    return tempFile.path;
   }
 
   void _showSnackBar(String message) {
@@ -337,12 +351,20 @@ class _BatchProcessingScreenState extends State<BatchProcessingScreen> {
     );
   }
 
+  void _viewImageFullScreen(String imagePath) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FullScreenImagePage(imagePath: imagePath),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Batch Processing'),
-        // backgroundColor: Colors.blueGrey[900],
       ),
       body: Center(
         child: Column(
@@ -366,9 +388,14 @@ class _BatchProcessingScreenState extends State<BatchProcessingScreen> {
                   mainAxisSpacing: 4,
                 ),
                 itemBuilder: (context, index) {
-                  return Image.file(
-                    File(_imageFiles![index].path),
-                    fit: BoxFit.cover,
+                  return GestureDetector(
+                    onTap: () {
+                      _viewImageFullScreen(_imageFiles![index].path);
+                    },
+                    child: Image.file(
+                      File(_imageFiles![index].path),
+                      fit: BoxFit.cover,
+                    ),
                   );
                 },
               ),
