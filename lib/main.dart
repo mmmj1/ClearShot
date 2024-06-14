@@ -282,7 +282,7 @@ class _BatchProcessingScreenState extends State<BatchProcessingScreen> {
       if (pickedFiles != null && pickedFiles.length <= 9) {
         _imageFiles = pickedFiles;
       } else if (pickedFiles != null && pickedFiles.length > 9) {
-        _imageFiles = pickedFiles.sublist(0, 9); // 只选择前9张图片
+        _imageFiles = pickedFiles.sublist(0, 9); // 只选择前9张图片的
       } else {
         _imageFiles = null;
       }
