@@ -237,6 +237,7 @@ class _ImagePickerDemoState extends State<ImagePickerDemo> {
               )
           )
       ),
+
       body: SingleChildScrollView(
         child: Center(
           child: Column(
